@@ -1,0 +1,22 @@
+python3 train.py --train_src_file corpus/train.zh \
+--train_tgt_file corpus/train.en \
+--device_count 1 \
+--src_max_length 256 \
+--tgt_max_length 512 \
+--batch_size 256 \
+--num_dataloader_worker 1 \
+--shuffle_training_set \
+--dev_src_file corpus/dev.zh \
+--dev_tgt_file corpus/dev.en \
+--warmup_step 5000 \
+--d_model 512 \
+--nhead 8 \
+--num_encoder_layers 6 \
+--num_decoder_layers 6 \
+--dim_feedforward 2048 \
+--transformer_dropout 0.1 \
+--pe_dropout 0.1 \
+--tgt_vocab_size 28996 \
+--epoch 300 \
+--log_dir log \
+--finetune_src_bert
