@@ -84,7 +84,7 @@ def main(rank, args):
             )
             tgt_output_ids = tgt_output_ids.to(pred.device)
             tgt_output_mask = tgt_output_mask.to(pred.device)
-            loss = loss_fn(pred, tgt_output_ids, tgt_output_mask)
+            loss = loss_fn(pred.premute(0, 2, 1), tgt_output_ids, tgt_output_mask)
             loss.backward()
             optimizer.step()
             lr_scheduler.step()
@@ -121,7 +121,9 @@ def main(rank, args):
                     )
                     tgt_output_ids = tgt_output_ids.to(pred.device)
                     tgt_output_mask = tgt_output_mask.to(pred.device)
-                    loss = loss_fn(pred, tgt_output_ids, tgt_output_mask)
+                    loss = loss_fn(
+                        pred.permute(0, 2, 1), tgt_output_ids, tgt_output_mask
+                    )
                     writer.add_scalar("dev_loss", loss.item(), i + 1)
                     print(
                         "eval: epoch {}, total step: {}, loss: {}".format(

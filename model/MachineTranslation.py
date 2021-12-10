@@ -81,6 +81,8 @@ class MachineTranslationModel(nn.Module):
         # src_bert_output: (batch_size,max_src_length,BERT_DIM)
         # tgt_bert_output: (batch_size,max_tgt_length,BERT_DIM)
 
+        # the src_key_padding_mask, tgt_key_padding_mask and memory_key_padding_mask
+        # uses True to indicate a padding element
         src_bert_output = self.encoder_pe(self.encoder_input_linear(src_bert_output))
         tgt_bert_output = self.decoder_pe(self.decoder_input_linear(tgt_bert_output))
         src_key_padding_mask = src_attention_mask == 0
@@ -93,12 +95,5 @@ class MachineTranslationModel(nn.Module):
             tgt_key_padding_mask=tgt_key_padding_mask,
             memory_key_padding_mask=src_key_padding_mask,
         )
-        # the src_key_padding_mask requires True indicates a padding element
-        return self.softmax(self.decoder_output_linear(transformer_output)).permute(
-            0, 2, 1
-        )
 
-    def pred(self, src_input_ids, src_token_type_ids, src_attention_mask):
-        src_bert_output = self.src_bert(
-            src_input_ids, src_token_type_ids, src_attention_mask
-        )
+        return self.softmax(self.decoder_output_linear(transformer_output))
