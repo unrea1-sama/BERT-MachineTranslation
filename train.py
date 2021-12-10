@@ -41,7 +41,7 @@ def main(rank, args):
         args.src_max_length,
         args.tgt_max_length,
         args.shuffle_training_set,
-        args.num_dataloader_worker,
+        0,
     )
     dev_dataloader = load_dataset(
         args.dev_src_file,
@@ -51,8 +51,8 @@ def main(rank, args):
         args.batch_size,
         args.src_max_length,
         args.tgt_max_length,
-        True,
-        args.num_dataloader_worker,
+        False,
+        0,
     )
     optimizer, lr_scheduler = set_up_optimizer(
         ddp_model, optim.Adam, args.d_model, args.warmup_step
@@ -84,7 +84,7 @@ def main(rank, args):
             )
             tgt_output_ids = tgt_output_ids.to(pred.device)
             tgt_output_mask = tgt_output_mask.to(pred.device)
-            loss = loss_fn(pred.premute(0, 2, 1), tgt_output_ids, tgt_output_mask)
+            loss = loss_fn(pred.permute(0, 2, 1), tgt_output_ids, tgt_output_mask)
             loss.backward()
             optimizer.step()
             lr_scheduler.step()

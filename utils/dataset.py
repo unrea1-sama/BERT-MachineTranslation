@@ -1,6 +1,7 @@
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 from transformers import AutoTokenizer
+import h5py
 
 BOS = "[CLS]"
 EOS = "[SEP]"
@@ -17,7 +18,7 @@ class TranslationDataset(Dataset):
         tgt_filepath=None,
     ):
         super(TranslationDataset, self).__init__()
-        temp_list = []
+        self.src_h5 = h5py.File(src_filepath, "r")
         # if the target corpus is given, generate training examples
         if tgt_filepath:
             self.collate_fn = TranslationTrainingDatasetCollateFn(
@@ -26,36 +27,24 @@ class TranslationDataset(Dataset):
                 src_max_length,
                 tgt_max_length,
             )
-            with open(src_filepath) as src_file:
-                with open(tgt_filepath) as tgt_file:
-                    for src_line, tgt_line in zip(src_file, tgt_file):
-                        # manually add BOS and EOS token into the target sentence
-                        # since the input to decoder requires BOS
-                        # and the prediction of the decoder requires EOS
-                        temp_list.append(
-                            [
-                                src_line,
-                                " ".join([BOS, tgt_line]),
-                                " ".join([tgt_line, EOS]),
-                            ]
-                        )
-
+            self.tgt_h5 = h5py.File(tgt_filepath, "r")
         # no target corpus, generate test examples for inference
         else:
             self.collate_fn = TranslationInferenceDatasetCollateFn(
                 src_tokenizer_name, tgt_tokenizer_name, src_max_length, tgt_max_length
             )
-            with open(src_filepath) as src_file:
-                for src_line in src_file:
-                    # BOS symbol here is just a start symbol for inference
-                    temp_list.append([src_line, BOS])
-        self.dataset = np.array(temp_list)
+            self.tgt_h5 = None
 
     def __getitem__(self, index):
-        return self.dataset[index]
+        src = self.src_h5["data"][index].decode("utf-8")
+        if self.tgt_h5:
+            tgt = self.tgt_h5["data"][index].decode("utf-8")
+            return [src, " ".join([BOS, tgt]), " ".join([tgt, EOS])]
+        else:
+            return [src, BOS]
 
     def __len__(self):
-        return self.dataset.shape[0]
+        return self.src_h5["data"].len()
 
 
 class TranslationTrainingDatasetCollateFn:
@@ -77,6 +66,7 @@ class TranslationTrainingDatasetCollateFn:
             return_tensors="pt",
             max_length=self.src_max_length,
             padding="max_length",
+            truncation=True,
         )
         # we have already add special tokens for tgt_input and tgt_output
         tgt_input_token = self.tgt_tokenizer(
@@ -85,6 +75,7 @@ class TranslationTrainingDatasetCollateFn:
             max_length=self.tgt_max_length,
             padding="max_length",
             add_special_tokens=False,
+            truncation=True,
         )
         tgt_output_token = self.tgt_tokenizer(
             batch_tgt_output,
@@ -92,6 +83,7 @@ class TranslationTrainingDatasetCollateFn:
             max_length=self.tgt_max_length,
             padding="max_length",
             add_special_tokens=False,
+            truncation=True,
         )
 
         return (
@@ -125,6 +117,7 @@ class TranslationInferenceDatasetCollateFn:
             return_tensors="pt",
             max_length=self.src_max_length,
             padding="max_length",
+            truncation=True,
         )
         # we have already add special tokens for tgt_input and tgt_output
         tgt_input_token = self.tgt_tokenizer(
@@ -133,6 +126,7 @@ class TranslationInferenceDatasetCollateFn:
             max_length=self.tgt_max_length,
             padding="max_length",
             add_special_tokens=False,
+            truncation=True,
         )
 
         return (

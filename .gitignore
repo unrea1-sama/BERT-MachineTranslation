@@ -1,4 +1,4 @@
-log/
+log*/
 corpus/
 test.sh
 __pycache__
