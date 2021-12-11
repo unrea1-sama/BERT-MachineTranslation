@@ -41,7 +41,6 @@ def main(rank, args):
         args.src_max_length,
         args.tgt_max_length,
         args.shuffle_training_set,
-        0,
     )
     dev_dataloader = load_dataset(
         args.dev_src_file,
@@ -52,7 +51,6 @@ def main(rank, args):
         args.src_max_length,
         args.tgt_max_length,
         False,
-        0,
     )
     optimizer, lr_scheduler = set_up_optimizer(
         ddp_model, optim.Adam, args.d_model, args.warmup_step
@@ -95,46 +93,46 @@ def main(rank, args):
                     )
                 )
                 writer.add_scalar("train_loss", loss.item(), step)
+                if step % args.eval_step == 0:
+                    ddp_model.eval()
+                    with torch.no_grad():
+                        for (
+                            src_input_ids,
+                            src_token_type_ids,
+                            src_attention_mask,
+                            tgt_input_ids,
+                            tgt_token_type_ids,
+                            tgt_attention_mask,
+                            tgt_output_ids,
+                            tgt_output_mask,
+                        ) in dev_dataloader:
+                            pred = ddp_model(
+                                src_input_ids,
+                                src_token_type_ids,
+                                src_attention_mask,
+                                tgt_input_ids,
+                                tgt_token_type_ids,
+                                tgt_attention_mask,
+                            )
+                            tgt_output_ids = tgt_output_ids.to(pred.device)
+                            tgt_output_mask = tgt_output_mask.to(pred.device)
+                            loss = loss_fn(
+                                pred.permute(0, 2, 1), tgt_output_ids, tgt_output_mask
+                            )
+                            writer.add_scalar("dev_loss", loss.item(), i + 1)
+                            print(
+                                "eval: epoch {}, total step: {}, loss: {}".format(
+                                    i + 1, step, loss.item()
+                                )
+                            )
+                    torch.save(
+                        model.state_dict(),
+                        os.path.join(args.log_dir, "checkpoint-{}.pt".format(i + 1)),
+                    )
             step += 1
+
             # to make all process synchronized
             dist.barrier()
-        ddp_model.eval()
-        if rank == 0:
-            with torch.no_grad():
-                for (
-                    src_input_ids,
-                    src_token_type_ids,
-                    src_attention_mask,
-                    tgt_input_ids,
-                    tgt_token_type_ids,
-                    tgt_attention_mask,
-                    tgt_output_ids,
-                    tgt_output_mask,
-                ) in dev_dataloader:
-                    pred = ddp_model(
-                        src_input_ids,
-                        src_token_type_ids,
-                        src_attention_mask,
-                        tgt_input_ids,
-                        tgt_token_type_ids,
-                        tgt_attention_mask,
-                    )
-                    tgt_output_ids = tgt_output_ids.to(pred.device)
-                    tgt_output_mask = tgt_output_mask.to(pred.device)
-                    loss = loss_fn(
-                        pred.permute(0, 2, 1), tgt_output_ids, tgt_output_mask
-                    )
-                    writer.add_scalar("dev_loss", loss.item(), i + 1)
-                    print(
-                        "eval: epoch {}, total step: {}, loss: {}".format(
-                            i + 1, step, loss.item()
-                        )
-                    )
-        torch.save(
-            model.state_dict(),
-            os.path.join(args.log_dir, "checkpoint-{}.pt".format(i + 1)),
-        )
-        dist.barrier()
 
     dist.destroy_process_group()
     writer.close()

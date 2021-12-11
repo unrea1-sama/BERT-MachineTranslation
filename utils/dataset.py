@@ -148,7 +148,6 @@ def load_dataset(
     src_max_length,
     tgt_max_length,
     shuffle,
-    num_workers,
 ):
     dataset = TranslationDataset(
         src_bert_name,
@@ -162,7 +161,6 @@ def load_dataset(
         dataset,
         batch_size,
         shuffle,
-        num_workers=num_workers,
         collate_fn=dataset.collate_fn,
     )
 
