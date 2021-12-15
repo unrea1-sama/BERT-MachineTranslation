@@ -36,9 +36,9 @@ class TranslationDataset(Dataset):
             self.tgt_h5 = None
 
     def __getitem__(self, index):
-        src = self.src_h5["data"][index].decode("utf-8")
+        src = self.src_h5["data"][index].decode("utf-8").strip()
         if self.tgt_h5:
-            tgt = self.tgt_h5["data"][index].decode("utf-8")
+            tgt = self.tgt_h5["data"][index].decode("utf-8").strip()
             return [src, " ".join([BOS, tgt]), " ".join([tgt, EOS])]
         else:
             return [src, BOS]
@@ -95,6 +95,9 @@ class TranslationTrainingDatasetCollateFn:
             tgt_input_token["attention_mask"],
             tgt_output_token["input_ids"],
             tgt_output_token["attention_mask"],
+            batch_src_input,
+            batch_tgt_input,
+            batch_tgt_output,
         )
 
 
@@ -136,6 +139,8 @@ class TranslationInferenceDatasetCollateFn:
             tgt_input_token["input_ids"],
             tgt_input_token["token_type_ids"],
             tgt_input_token["attention_mask"],
+            batch_src_input,
+            batch_tgt_input,
         )
 
 
@@ -157,11 +162,14 @@ def load_dataset(
         src_filepath,
         tgt_filepath,
     )
-    return DataLoader(
+    return (
+        DataLoader(
+            dataset,
+            batch_size,
+            shuffle,
+            collate_fn=dataset.collate_fn,
+        ),
         dataset,
-        batch_size,
-        shuffle,
-        collate_fn=dataset.collate_fn,
     )
 
 
