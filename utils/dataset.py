@@ -2,6 +2,7 @@ from torch.utils.data import Dataset, DataLoader
 import numpy as np
 from transformers import AutoTokenizer
 import h5py
+from torch.utils.data.distributed import DistributedSampler
 
 BOS = "[CLS]"
 EOS = "[SEP]"
@@ -123,6 +124,7 @@ class TranslationInferenceDatasetCollateFn:
             truncation=True,
         )
         # we have already add special tokens for tgt_input and tgt_output
+        # set add_special_tokens to False
         tgt_input_token = self.tgt_tokenizer(
             batch_tgt_input,
             return_tensors="pt",
@@ -153,6 +155,8 @@ def load_dataset(
     src_max_length,
     tgt_max_length,
     shuffle,
+    world_size,
+    rank,
 ):
     dataset = TranslationDataset(
         src_bert_name,
@@ -162,14 +166,18 @@ def load_dataset(
         src_filepath,
         tgt_filepath,
     )
-    return (
-        DataLoader(
-            dataset,
-            batch_size,
-            shuffle,
-            collate_fn=dataset.collate_fn,
-        ),
+    if world_size > 1:
+        # when in distributed training mode, use distributed sampler
+        sampler = DistributedSampler(dataset, world_size, rank, shuffle)
+        return DataLoader(
+            dataset, batch_size, collate_fn=dataset.collate_fn, sampler=sampler
+        )
+
+    return DataLoader(
         dataset,
+        batch_size,
+        shuffle,
+        collate_fn=dataset.collate_fn,
     )
 
 

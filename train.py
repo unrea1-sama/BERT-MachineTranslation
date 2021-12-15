@@ -33,7 +33,7 @@ def main(rank, args):
     ).to(rank)
     ddp_model = DDP(model, device_ids=[rank], find_unused_parameters=True)
     loss_fn = MaskedMSELoss()
-    train_dataloader, _ = load_dataset(
+    train_dataloader = load_dataset(
         args.train_src_file,
         args.train_tgt_file,
         CHINESE_BERT_NAME,
@@ -42,8 +42,10 @@ def main(rank, args):
         args.src_max_length,
         args.tgt_max_length,
         args.shuffle_training_set,
+        args.device_count,
+        rank,
     )
-    dev_dataloader, dev_dataset = load_dataset(
+    dev_dataloader = load_dataset(
         args.dev_src_file,
         args.dev_tgt_file,
         CHINESE_BERT_NAME,
@@ -52,7 +54,9 @@ def main(rank, args):
         args.src_max_length,
         args.tgt_max_length,
         False,
-    )
+        1,
+        None,
+    )  # dev_dataloader are not required to use distributed sampler
     optimizer, lr_scheduler = set_up_optimizer(
         ddp_model, optim.Adam, args.d_model, args.warmup_step
     )
@@ -62,6 +66,8 @@ def main(rank, args):
     step = 1
     eval_step = 1
     for i in range(args.epoch):
+        if args.device_count > 1:
+            train_dataloader.sampler.set_epoch(i)
         ddp_model.train()
         for (
             src_input_ids,
@@ -127,15 +133,11 @@ def main(rank, args):
                         loss = loss_fn(
                             pred.permute(0, 2, 1), tgt_output_ids, tgt_output_mask
                         )
-                        decoded_result = (
-                            dev_dataset.collate_fn.tgt_tokenizer.batch_decode(
-                                pred.argmax(dim=2), skip_special_tokens=False
-                            )
+                        decoded_result = dev_dataloader.dataset.collate_fn.tgt_tokenizer.batch_decode(
+                            pred.argmax(dim=2), skip_special_tokens=False
                         )
-                        decoded_ground_truth = (
-                            dev_dataset.collate_fn.tgt_tokenizer.batch_decode(
-                                tgt_output_ids, skip_special_tokens=False
-                            )
+                        decoded_ground_truth = dev_dataloader.dataset.collate_fn.tgt_tokenizer.batch_decode(
+                            tgt_output_ids, skip_special_tokens=False
                         )
                         bleu = calbleu(decoded_result, decoded_ground_truth)
                         if rank == 0:
