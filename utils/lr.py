@@ -1,4 +1,3 @@
-from math import pow
 from torch.optim.lr_scheduler import LambdaLR
 
 
@@ -20,6 +19,6 @@ def set_up_optimizer(model, optimizer, d_model, warmup_step):
 
 
 if __name__ == "__main__":
-    lr = LR(512, 400)
-    for i in range(1, 1000):
-        print(lr(i))
+    lr = LR(512, 4000)
+    for i in range(100000):
+        print("{}\n".format(lr(i)))

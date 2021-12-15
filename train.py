@@ -10,6 +10,7 @@ from model import MachineTranslationModel, CHINESE_BERT_NAME, ENGLISH_BERT_NAME
 import os
 from utils.lr import set_up_optimizer
 from torch.utils.tensorboard import SummaryWriter
+from utils.bleu import calbleu
 
 
 def main(rank, args):
@@ -32,7 +33,7 @@ def main(rank, args):
     ).to(rank)
     ddp_model = DDP(model, device_ids=[rank], find_unused_parameters=True)
     loss_fn = MaskedMSELoss()
-    train_dataloader = load_dataset(
+    train_dataloader, _ = load_dataset(
         args.train_src_file,
         args.train_tgt_file,
         CHINESE_BERT_NAME,
@@ -42,7 +43,7 @@ def main(rank, args):
         args.tgt_max_length,
         args.shuffle_training_set,
     )
-    dev_dataloader = load_dataset(
+    dev_dataloader, dev_dataset = load_dataset(
         args.dev_src_file,
         args.dev_tgt_file,
         CHINESE_BERT_NAME,
@@ -59,6 +60,7 @@ def main(rank, args):
         writer = SummaryWriter(args.log_dir)
     dist.barrier()
     step = 1
+    eval_step = 1
     for i in range(args.epoch):
         ddp_model.train()
         for (
@@ -70,6 +72,9 @@ def main(rank, args):
             tgt_attention_mask,
             tgt_output_ids,
             tgt_output_mask,
+            _,
+            _,
+            _,
         ) in train_dataloader:
             optimizer.zero_grad()
             pred = ddp_model(
@@ -85,57 +90,79 @@ def main(rank, args):
             loss = loss_fn(pred.permute(0, 2, 1), tgt_output_ids, tgt_output_mask)
             loss.backward()
             optimizer.step()
-            lr_scheduler.step()
             if rank == 0:
                 print(
-                    "training: epoch {}, total step: {}, loss: {}".format(
-                        i + 1, step, loss.item()
+                    "training: epoch {}, total step: {}, lr: {}, loss: {}".format(
+                        i + 1, step, lr_scheduler.get_last_lr()[0], loss.item()
                     )
                 )
-                writer.add_scalar("train_loss", loss.item(), step)
-                if step % args.eval_step == 0:
-                    ddp_model.eval()
-                    with torch.no_grad():
-                        for (
+                writer.add_scalar("train loss", loss.item(), step)
+                writer.add_scalar("learning rate", lr_scheduler.get_last_lr()[0], step)
+            if step % args.eval_step == 0:
+                ddp_model.eval()
+                with torch.no_grad():
+                    for (
+                        src_input_ids,
+                        src_token_type_ids,
+                        src_attention_mask,
+                        tgt_input_ids,
+                        tgt_token_type_ids,
+                        tgt_attention_mask,
+                        tgt_output_ids,
+                        tgt_output_mask,
+                        _,
+                        _,
+                        _,
+                    ) in dev_dataloader:
+                        pred = ddp_model(
                             src_input_ids,
                             src_token_type_ids,
                             src_attention_mask,
                             tgt_input_ids,
                             tgt_token_type_ids,
                             tgt_attention_mask,
-                            tgt_output_ids,
-                            tgt_output_mask,
-                        ) in dev_dataloader:
-                            pred = ddp_model(
-                                src_input_ids,
-                                src_token_type_ids,
-                                src_attention_mask,
-                                tgt_input_ids,
-                                tgt_token_type_ids,
-                                tgt_attention_mask,
+                        )
+                        tgt_output_ids = tgt_output_ids.to(pred.device)
+                        tgt_output_mask = tgt_output_mask.to(pred.device)
+                        loss = loss_fn(
+                            pred.permute(0, 2, 1), tgt_output_ids, tgt_output_mask
+                        )
+                        decoded_result = (
+                            dev_dataset.collate_fn.tgt_tokenizer.batch_decode(
+                                pred.argmax(dim=2), skip_special_tokens=False
                             )
-                            tgt_output_ids = tgt_output_ids.to(pred.device)
-                            tgt_output_mask = tgt_output_mask.to(pred.device)
-                            loss = loss_fn(
-                                pred.permute(0, 2, 1), tgt_output_ids, tgt_output_mask
+                        )
+                        decoded_ground_truth = (
+                            dev_dataset.collate_fn.tgt_tokenizer.batch_decode(
+                                tgt_output_ids, skip_special_tokens=False
                             )
-                            writer.add_scalar("dev_loss", loss.item(), i + 1)
+                        )
+                        bleu = calbleu(decoded_result, decoded_ground_truth)
+                        if rank == 0:
+                            writer.add_scalar("dev loss", loss.item(), eval_step)
+                            writer.add_scalar("dev bleu", bleu, eval_step)
                             print(
-                                "eval: epoch {}, total step: {}, loss: {}".format(
-                                    i + 1, step, loss.item()
+                                "eval: epoch {}, eval step: {}, loss: {}, bleu: {}".format(
+                                    i + 1, eval_step, loss.item(), bleu
                                 )
                             )
+
+                        eval_step += 1
+                if rank == 0:
                     torch.save(
                         model.state_dict(),
-                        os.path.join(args.log_dir, "checkpoint-{}.pt".format(i + 1)),
+                        os.path.join(
+                            args.log_dir, "checkpoint_{}_{}.pt".format(i + 1, eval_step)
+                        ),
                     )
-            step += 1
-
             # to make all process synchronized
             dist.barrier()
+            lr_scheduler.step()
+            step += 1
 
     dist.destroy_process_group()
-    writer.close()
+    if rank == 0:
+        writer.close()
 
 
 if __name__ == "__main__":
