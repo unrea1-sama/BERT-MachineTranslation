@@ -47,7 +47,6 @@ class MachineTranslationModel(nn.Module):
         self.encoder_input_linear = nn.Linear(BERT_DIM, d_model)
         self.decoder_input_linear = nn.Linear(BERT_DIM, d_model)
         self.decoder_output_linear = nn.Linear(d_model, tgt_vocab_size)
-        self.softmax = nn.Softmax(dim=2)
 
         self.decoder_tgt_mask = nn.parameter.Parameter(
             nn.Transformer.generate_square_subsequent_mask(tgt_max_length), False
@@ -96,4 +95,4 @@ class MachineTranslationModel(nn.Module):
             memory_key_padding_mask=src_key_padding_mask,
         )
 
-        return self.softmax(self.decoder_output_linear(transformer_output))
+        return self.decoder_output_linear(transformer_output)
