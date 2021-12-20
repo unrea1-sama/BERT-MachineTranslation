@@ -13,6 +13,11 @@ from torch.utils.tensorboard import SummaryWriter
 from utils.bleu import calbleu, clean
 
 
+def write_str_to_file(name, strs):
+    with open(name, "w") as f:
+        f.writelines([x + "\n" for x in strs])
+
+
 def main(rank, args):
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = "12345"
@@ -104,7 +109,6 @@ def main(rank, args):
                 )
                 writer.add_scalar("train loss", loss.item(), step)
                 writer.add_scalar("learning rate", lr_scheduler.get_last_lr()[0], step)
-
             if step % args.eval_step == 0:
                 ddp_model.eval()
                 with torch.no_grad():
@@ -131,55 +135,49 @@ def main(rank, args):
                             tgt_token_type_ids,
                             tgt_attention_mask,
                         )
-                        tgt_output_ids = tgt_output_ids.to(pred.device)
-                        tgt_output_mask = tgt_output_mask.to(pred.device)
                         loss = loss_fn(
-                            pred.permute(0, 2, 1), tgt_output_ids, tgt_output_mask
+                            pred.permute(0, 2, 1),
+                            tgt_output_ids.to(pred.device),
+                            tgt_output_mask.to(pred.device),
                         )
-                        decoded_result = dev_dataloader.dataset.collate_fn.tgt_tokenizer.batch_decode(
-                            pred.argmax(dim=2), skip_special_tokens=False
-                        )
-                        decoded_ground_truth = dev_dataloader.dataset.collate_fn.tgt_tokenizer.batch_decode(
-                            tgt_output_ids, skip_special_tokens=False
-                        )
+                        decoded_result = pred.argmax(dim=2).cpu().numpy().tolist()
+                        decoded_ground_truth = tgt_output_ids.numpy().tolist()
                         all_decoded_result.extend(decoded_result)
                         all_decoded_target.extend(decoded_ground_truth)
-                        bleu = calbleu(decoded_result, decoded_ground_truth)
                         if rank == 0:
                             writer.add_scalar("dev loss", loss.item(), eval_step)
-                            writer.add_scalar("dev bleu", bleu, eval_step)
                             print(
-                                "eval: epoch {}, eval step: {}, loss: {}, bleu: {}".format(
-                                    i + 1, eval_step, loss.item(), bleu
+                                "eval: epoch {}, eval step: {}, loss: {}".format(
+                                    i + 1, eval_step, loss.item()
                                 )
                             )
-
                         eval_step += 1
                 if rank == 0:
+                    all_decoded_result = clean(
+                        all_decoded_result,
+                        dev_dataloader.dataset.collate_fn.tgt_tokenizer,
+                    )
+                    all_decoded_target = clean(
+                        all_decoded_target,
+                        dev_dataloader.dataset.collate_fn.tgt_tokenizer,
+                    )
                     torch.save(
                         model.state_dict(),
-                        os.path.join(
-                            args.log_dir, "checkpoint_{}_{}.pt".format(i + 1, eval_step)
-                        ),
+                        os.path.join(args.log_dir, "checkpoint_{}.pt".format(step)),
                     )
-                    with open(
-                        os.path.join(
-                            args.log_dir, "result_{}_{}.txt".format(i + 1, eval_step)
-                        ),
-                        "w",
-                    ) as f:
-                        f.writelines(
-                            [" ".join(clean(x)) + "\n" for x in all_decoded_result]
-                        )
-                    with open(
-                        os.path.join(args.log_dir, "ground_truth_{}_{}.txt").format(
-                            i + 1, eval_step
-                        ),
-                        "w",
-                    ) as f:
-                        f.writelines(
-                            [" ".join(clean(x)) + "\n" for x in all_decoded_target]
-                        )
+                    write_str_to_file(
+                        os.path.join(args.log_dir, "result_{}.txt".format(step)),
+                        [" ".join(x) for x in all_decoded_result],
+                    )
+                    write_str_to_file(
+                        os.path.join(args.log_dir, "ground_truth_{}.txt".format(step)),
+                        [" ".join(x) for x in all_decoded_target],
+                    )
+                    bleu = calbleu(all_decoded_result, all_decoded_target)
+                    print(
+                        "eval: epoch {}, step: {}, bleu: {}".format(i + 1, step, bleu)
+                    )
+                    writer.add_scalar("bleu", bleu, step)
                     for name, param in ddp_model.named_parameters():
                         if "transformer" in name:
                             writer.add_histogram(name, param, step)

@@ -3,16 +3,24 @@ import collections
 import torch
 
 
-def clean(seq):
-    result = []
-    for x in seq.split(" "):
-        if x == "<SEP>":
-            # this is a EOS symbol
-            break
-        else:
-            if x != "<PAD>" and x != "<CLS>":
-                result.append(x)
-    return result
+def clean(seqs, tokenizer):
+    results = []
+    for seq in seqs:
+        result = []
+        for x in tokenizer.convert_ids_to_tokens(seq):
+            if x == "[SEP]":
+                # this is a EOS symbol
+                break
+            else:
+                if x != "[PAD]" and x != "[CLS]":
+                    # merge word piece
+                    if x.startswith('##'):
+                        if len(result):
+                            result[-1]+=x[2:]
+                    else:
+                        result.append(x)
+        results.append(result)
+    return results
 
 
 def calbleu(pred, ground_truth, k=4):
@@ -25,11 +33,8 @@ def calbleu(pred, ground_truth, k=4):
     return torch.tensor(result).mean()
 
 
-def bleu(pred_seq, label_seq, k):  # @save
+def bleu(pred_tokens, label_tokens, k):
     """Compute the BLEU."""
-
-    pred_tokens = clean(pred_seq)
-    label_tokens = clean(label_seq)
     len_pred, len_label = len(pred_tokens), len(label_tokens)
     score = math.exp(min(0, 1 - len_label / len_pred))
     for n in range(1, k + 1):
