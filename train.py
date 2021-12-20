@@ -10,7 +10,7 @@ from model import MachineTranslationModel, CHINESE_BERT_NAME, ENGLISH_BERT_NAME
 import os
 from utils.lr import set_up_optimizer
 from torch.utils.tensorboard import SummaryWriter
-from utils.bleu import calbleu
+from utils.bleu import calbleu, clean
 
 
 def main(rank, args):
@@ -104,9 +104,12 @@ def main(rank, args):
                 )
                 writer.add_scalar("train loss", loss.item(), step)
                 writer.add_scalar("learning rate", lr_scheduler.get_last_lr()[0], step)
+
             if step % args.eval_step == 0:
                 ddp_model.eval()
                 with torch.no_grad():
+                    all_decoded_result = []
+                    all_decoded_target = []
                     for (
                         src_input_ids,
                         src_token_type_ids,
@@ -139,6 +142,8 @@ def main(rank, args):
                         decoded_ground_truth = dev_dataloader.dataset.collate_fn.tgt_tokenizer.batch_decode(
                             tgt_output_ids, skip_special_tokens=False
                         )
+                        all_decoded_result.extend(decoded_result)
+                        all_decoded_target.extend(decoded_ground_truth)
                         bleu = calbleu(decoded_result, decoded_ground_truth)
                         if rank == 0:
                             writer.add_scalar("dev loss", loss.item(), eval_step)
@@ -157,6 +162,27 @@ def main(rank, args):
                             args.log_dir, "checkpoint_{}_{}.pt".format(i + 1, eval_step)
                         ),
                     )
+                    with open(
+                        os.path.join(
+                            args.log_dir, "result_{}_{}.txt".format(i + 1, eval_step)
+                        ),
+                        "w",
+                    ) as f:
+                        f.writelines(
+                            [" ".join(clean(x)) + "\n" for x in all_decoded_result]
+                        )
+                    with open(
+                        os.path.join(args.log_dir, "ground_truth_{}_{}.txt").format(
+                            i + 1, eval_step
+                        ),
+                        "w",
+                    ) as f:
+                        f.writelines(
+                            [" ".join(clean(x)) + "\n" for x in all_decoded_target]
+                        )
+                    for name, param in ddp_model.named_parameters():
+                        if "transformer" in name:
+                            writer.add_histogram(name, param, step)
             # to make all process synchronized
             dist.barrier()
             lr_scheduler.step()
