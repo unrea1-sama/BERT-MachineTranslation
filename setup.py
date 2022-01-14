@@ -28,7 +28,9 @@ setup(
         "future",
         "pillow",
         "torch>=1.1.0",
-        "regex"],
+        "regex",
+        "tokenizers"
+        ],
     classifiers=[
         "Programming Language :: Python :: 3",
         "Topic :: Scientific/Engineering :: Artificial Intelligence"])
