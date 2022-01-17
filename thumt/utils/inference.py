@@ -7,6 +7,7 @@ from __future__ import print_function
 
 import math
 import torch
+from tokenizers import Tokenizer
 
 from collections import namedtuple
 from thumt.utils.nest import map_structure
@@ -169,11 +170,19 @@ def beam_search(models, features, params):
     alpha = params.decode_alpha
     decode_ratio = params.decode_ratio
     decode_length = params.decode_length
+    
+    tokenizer = Tokenizer.from_file(params.tokenizer)
+    vocab = tokenizer.get_vocab()
 
-    pad_id = params.vocabulary["target"][params.pad]
-    bos_id = params.vocabulary["target"][params.bos]
-    eos_id = params.vocabulary["target"][params.eos]
 
+    pad_id = vocab[params.pad]
+    bos_id = vocab[params.bos]
+    eos_id = vocab[params.eos]
+    """
+        pad_id = params.vocabulary["target"][params.pad]
+        bos_id = params.vocabulary["target"][params.bos]
+        eos_id = params.vocabulary["target"][params.eos]
+    """
     min_val = -1e9
     shape = features["source"].shape
     device = features["source"].device

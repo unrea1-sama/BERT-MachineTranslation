@@ -22,41 +22,45 @@ import thumt.models as models
 import thumt.optimizers as optimizers
 import thumt.utils as utils
 import thumt.utils.summary as summary
+from tokenizers import Tokenizer
 
 
 def parse_args(args=None):
     parser = argparse.ArgumentParser(
         description="Train a neural machine translation model.",
-        usage="trainer.py [<args>] [-h | --help]"
+        usage="trainer.py [<args>] [-h | --help]",
     )
 
     # input files
-    parser.add_argument("--input", type=str, nargs=2,
-                        help="Path to source and target corpus.")
-    parser.add_argument("--output", type=str, default="train",
-                        help="Path to load/store checkpoints.")
-    parser.add_argument("--vocabulary", type=str, nargs=2,
-                        help="Path to source and target vocabulary.")
-    parser.add_argument("--validation", type=str,
-                        help="Path to validation file.")
-    parser.add_argument("--references", type=str,
-                        help="Pattern to reference files.")
-    parser.add_argument("--checkpoint", type=str,
-                        help="Path to pre-trained checkpoint.")
-    parser.add_argument("--distributed", action="store_true",
-                        help="Enable distributed training.")
-    parser.add_argument("--local_rank", type=int,
-                        help="Local rank of this process.")
-    parser.add_argument("--half", action="store_true",
-                        help="Enable mixed-precision training.")
-    parser.add_argument("--hparam_set", type=str,
-                        help="Name of pre-defined hyper-parameter set.")
+    parser.add_argument(
+        "--input", type=str, nargs=2, help="Path to source and target corpus."
+    )
+    parser.add_argument(
+        "--output", type=str, default="train", help="Path to load/store checkpoints."
+    )
+    parser.add_argument("--vocabulary", type=int, nargs=2, help="vocabulary size.")
+    parser.add_argument("--validation", type=str, help="Path to validation file.")
+    parser.add_argument("--references", type=str, help="Pattern to reference files.")
+    parser.add_argument(
+        "--checkpoint", type=str, help="Path to pre-trained checkpoint."
+    )
+    parser.add_argument(
+        "--distributed", action="store_true", help="Enable distributed training."
+    )
+    parser.add_argument("--local_rank", type=int, help="Local rank of this process.")
+    parser.add_argument(
+        "--half", action="store_true", help="Enable mixed-precision training."
+    )
+    parser.add_argument(
+        "--hparam_set", type=str, help="Name of pre-defined hyper-parameter set."
+    )
 
     # model and configuration
-    parser.add_argument("--model", type=str, required=True,
-                        help="Name of the model.")
-    parser.add_argument("--parameters", type=str, default="",
-                        help="Additional hyper-parameters.")
+    parser.add_argument("--model", type=str, required=True, help="Name of the model.")
+    parser.add_argument(
+        "--parameters", type=str, default="", help="Additional hyper-parameters."
+    )
+    parser.add_argument("--tokenizer", type=str)
 
     return parser.parse_args(args)
 
@@ -67,10 +71,10 @@ def default_params():
         output="",
         model="transformer",
         vocab=["", ""],
-        pad="<pad>",
-        bos="<eos>",
-        eos="<eos>",
-        unk="<unk>",
+        pad="[PAD]",
+        bos="[BOS]",
+        eos="[EOS]",
+        unk="[UNK]",
         # Dataset
         batch_size=4096,
         fixed_batch_size=False,
@@ -104,8 +108,8 @@ def default_params():
         learning_rate_values=[0.0],
         device_list=[0],
         # Checkpoint Saving
-        keep_checkpoint_max=20,
-        keep_top_checkpoint_max=5,
+        keep_checkpoint_max=None,
+        keep_top_checkpoint_max=10,
         save_summary=True,
         save_checkpoint_secs=0,
         save_checkpoint_steps=1000,
@@ -183,10 +187,10 @@ def override_params(params, args):
     params.references = args.references or params.references
     params.parse(args.parameters.lower())
 
-    params.vocabulary = {
-        "source": data.Vocabulary(params.vocab[0]),
-        "target": data.Vocabulary(params.vocab[1])
-    }
+    # params.vocabulary = {
+    #    "source": data.Vocabulary(params.vocab[0]),
+    #    "target": data.Vocabulary(params.vocab[1])
+    # }
 
     return params
 
@@ -247,7 +251,7 @@ def save_checkpoint(step, epoch, model, optimizer, params):
             "step": step,
             "epoch": epoch,
             "model": model.state_dict(),
-            "optimizer": optimizer.state_dict()
+            "optimizer": optimizer.state_dict(),
         }
         utils.save(state, params.output, params.keep_checkpoint_max)
 
@@ -270,18 +274,26 @@ def broadcast(model):
 def get_learning_rate_schedule(params):
     if params.learning_rate_schedule == "linear_warmup_rsqrt_decay":
         schedule = optimizers.LinearWarmupRsqrtDecay(
-            params.learning_rate, params.warmup_steps,
+            params.learning_rate,
+            params.warmup_steps,
             initial_learning_rate=params.initial_learning_rate,
-            summary=params.save_summary)
+            summary=params.save_summary,
+        )
     elif params.learning_rate_schedule == "piecewise_constant_decay":
         schedule = optimizers.PiecewiseConstantDecay(
-            params.learning_rate_boundaries, params.learning_rate_values,
-            summary=params.save_summary)
+            params.learning_rate_boundaries,
+            params.learning_rate_values,
+            summary=params.save_summary,
+        )
     elif params.learning_rate_schedule == "linear_exponential_decay":
         schedule = optimizers.LinearExponentialDecay(
-            params.learning_rate, params.warmup_steps,
-            params.start_decay_step, params.end_decay_step,
-            dist.get_world_size(), summary=params.save_summary)
+            params.learning_rate,
+            params.warmup_steps,
+            params.start_decay_step,
+            params.end_decay_step,
+            dist.get_world_size(),
+            summary=params.save_summary,
+        )
     elif params.learning_rate_schedule == "constant":
         schedule = params.learning_rate
     else:
@@ -305,46 +317,56 @@ def get_clipper(params):
 
 def get_optimizer(params, schedule, clipper):
     if params.optimizer.lower() == "adam":
-        optimizer = optimizers.AdamOptimizer(learning_rate=schedule,
-                                             beta_1=params.adam_beta1,
-                                             beta_2=params.adam_beta2,
-                                             epsilon=params.adam_epsilon,
-                                             clipper=clipper,
-                                             summaries=params.save_summary)
+        optimizer = optimizers.AdamOptimizer(
+            learning_rate=schedule,
+            beta_1=params.adam_beta1,
+            beta_2=params.adam_beta2,
+            epsilon=params.adam_epsilon,
+            clipper=clipper,
+            summaries=params.save_summary,
+        )
     elif params.optimizer.lower() == "adadelta":
         optimizer = optimizers.AdadeltaOptimizer(
-            learning_rate=schedule, rho=params.adadelta_rho,
-            epsilon=params.adadelta_epsilon, clipper=clipper,
-            summaries=params.save_summary)
+            learning_rate=schedule,
+            rho=params.adadelta_rho,
+            epsilon=params.adadelta_epsilon,
+            clipper=clipper,
+            summaries=params.save_summary,
+        )
     elif params.optimizer.lower() == "sgd":
         optimizer = optimizers.SGDOptimizer(
-            learning_rate=schedule, clipper=clipper,
-            summaries=params.save_summary)
+            learning_rate=schedule, clipper=clipper, summaries=params.save_summary
+        )
     else:
         raise ValueError("Unknown optimizer %s" % params.optimizer)
 
     return optimizer
 
 
-def load_references(pattern):
+def load_references(pattern, tokenizer_path):
     if not pattern:
         return None
 
+    tokenizer = Tokenizer.from_file(tokenizer_path)
     files = glob.glob(pattern)
     references = []
 
     for name in files:
         ref = []
-        with open(name, "rb") as fd:
+        with open(name, "r") as fd:
             for line in fd:
-                items = line.strip().split()
+                items = (
+                    re.sub("</w>", " ", "".join(tokenizer.encode(line.strip()).tokens))
+                    .strip()
+                    .split(" ")
+                )
                 ref.append(items)
         references.append(ref)
 
     return list(zip(*references))
 
 
-def main(args):
+def main(rank, args):
     model_cls = models.get_model(args.model)
 
     # Import and override parameters
@@ -354,6 +376,7 @@ def main(args):
     params = merge_params(params, model_cls.default_params(args.hparam_set))
     params = import_params(args.output, args.model, params)
     params = override_params(params, args)
+    params.add_hparam("tokenizer", args.tokenizer)
 
     # Initialize distributed utility
     if args.distributed:
@@ -363,17 +386,23 @@ def main(args):
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
     else:
         params.device = params.device_list[args.local_rank]
-        dist.init_process_group("nccl", init_method=args.url,
-                                rank=args.local_rank,
-                                world_size=len(params.device_list))
+        dist.init_process_group(
+            "nccl",
+            init_method=args.url,
+            rank=args.local_rank,
+            world_size=len(params.device_list),
+        )
         torch.cuda.set_device(params.device_list[args.local_rank])
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
     # Export parameters
     if dist.get_rank() == 0:
         export_params(params.output, "params.json", params)
-        export_params(params.output, "%s.json" % params.model,
-                      collect_params(params, model_cls.default_params()))
+        export_params(
+            params.output,
+            "%s.json" % params.model,
+            collect_params(params, model_cls.default_params()),
+        )
 
     model = model_cls(params).cuda()
 
@@ -396,15 +425,15 @@ def main(args):
 
     optimizer = optimizers.MultiStepOptimizer(optimizer, params.update_cycle)
 
-    trainable_flags = print_variables(model, params.pattern,
-                                      dist.get_rank() == 0)
+    trainable_flags = print_variables(model, params.pattern, dist.get_rank() == 0)
 
     dataset = data.MTPipeline.get_train_dataset(params.input, params)
 
     if params.validation:
         sorted_key, eval_dataset = data.MTPipeline.get_infer_dataset(
-            params.validation, params)
-        references = load_references(params.references)
+            params.validation, params
+        )
+        references = load_references(params.references, params.tokenizer)
     else:
         sorted_key = None
         eval_dataset = None
@@ -449,35 +478,48 @@ def main(args):
             counter += 1
             t = time.time()
             loss = train_fn(features)
-            gradients = optimizer.compute_gradients(loss,
-                                                    list(model.parameters()))
+            gradients = optimizer.compute_gradients(loss, list(model.parameters()))
             grads_and_vars = exclude_variables(
-                trainable_flags,
-                zip(gradients, list(model.named_parameters())))
+                trainable_flags, zip(gradients, list(model.named_parameters()))
+            )
             optimizer.apply_gradients(grads_and_vars)
 
             t = time.time() - t
 
             summary.scalar("loss", loss, step, write_every_n_steps=1)
             summary.scalar("global_step/sec", t, step)
-
-            print("epoch = %d, step = %d, loss = %.3f (%.3f sec)" %
-                  (epoch + 1, step, float(loss), t))
+            if rank == 0:
+                print(
+                    "epoch = %d, step = %d, loss = %.3f (%.3f sec)"
+                    % (epoch + 1, step, float(loss), t)
+                )
 
             if counter % params.update_cycle == 0:
                 if step >= params.train_steps:
-                    utils.evaluate(model, sorted_key, eval_dataset,
-                                   params.output, references, params)
+                    utils.evaluate(
+                        model,
+                        sorted_key,
+                        eval_dataset,
+                        params.output,
+                        references,
+                        params,
+                    )
                     save_checkpoint(step, epoch, model, optimizer, params)
 
-                    if dist.get_rank() == 0:
+                    if rank == 0:
                         summary.close()
 
                     return
 
                 if step % params.eval_steps == 0:
-                    utils.evaluate(model, sorted_key, eval_dataset,
-                                   params.output, references, params)
+                    utils.evaluate(
+                        model,
+                        sorted_key,
+                        eval_dataset,
+                        params.output,
+                        references,
+                        params,
+                    )
 
                 if step % params.save_checkpoint_steps == 0:
                     save_checkpoint(step, epoch, model, optimizer, params)
@@ -489,7 +531,7 @@ def main(args):
 def process_fn(rank, args):
     local_args = copy.copy(args)
     local_args.local_rank = rank
-    main(local_args)
+    main(rank, local_args)
 
 
 def cli_main():
@@ -508,8 +550,9 @@ def cli_main():
         world_size = infer_gpu_num(parsed_args.parameters)
 
         if world_size > 1:
-            torch.multiprocessing.spawn(process_fn, args=(parsed_args,),
-                                        nprocs=world_size)
+            torch.multiprocessing.spawn(
+                process_fn, args=(parsed_args,), nprocs=world_size
+            )
         else:
             process_fn(0, parsed_args)
 

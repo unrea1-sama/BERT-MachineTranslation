@@ -53,18 +53,18 @@ class Dataset(IterableDataset):
     def __init__(self):
         self._iterator = None
 
-    def __iter__(self) -> Iterator:
+    def __iter__(self):
         return Iterator(self)
 
-    @abc.abstractproperty
+    #@abc.abstractproperty
     def _inputs(self) -> NoReturn:
         raise NotImplementedError("Not implemented.")
 
-    @abc.abstractmethod
+    #@abc.abstractmethod
     def copy(self) -> NoReturn:
         raise NotImplementedError("Dataset.copy not implemented.")
 
-    @abc.abstractproperty
+    #@abc.abstractproperty
     def element_spec(self) -> NoReturn:
         raise NotImplementedError("Dataset.element_spec not implemented.")
 
@@ -90,7 +90,7 @@ class Dataset(IterableDataset):
     def shard(self, num_shards: int, index: int) -> "ShardDataset":
         return ShardDataset(self, num_shards, index)
 
-    @abc.abstractmethod
+    #@abc.abstractmethod
     def set_inputs(self, datasets: Tuple["Dataset"]) -> NoReturn:
         raise NotImplementedError("Dataset.set_inputs not implemented.")
 

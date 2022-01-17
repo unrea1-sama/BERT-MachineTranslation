@@ -7,9 +7,11 @@ from thumt.data.dataset import Dataset, ElementSpec, MapFunc, TextLineDataset
 from thumt.data.vocab import Vocabulary
 from thumt.tokenizers import WhiteSpaceTokenizer
 
+from tokenizers import Tokenizer
+
 
 def _sort_input_file(filename, reverse=True):
-    with open(filename, "rb") as fd:
+    with open(filename, "r") as fd:
         inputs = [line.strip() for line in fd]
 
     input_lens = [
@@ -31,18 +33,19 @@ class MTPipeline(object):
 
     @staticmethod
     def get_train_dataset(filenames, params, cpu=False):
-        src_vocab = params.vocabulary["source"]
-        tgt_vocab = params.vocabulary["target"]
+        tokenizer = Tokenizer.from_file(params.tokenizer)
+        src_vocab = tokenizer.get_vocab()
+        tgt_vocab = tokenizer.get_vocab()
 
         src_dataset = TextLineDataset(filenames[0])
         tgt_dataset = TextLineDataset(filenames[1])
         lab_dataset = TextLineDataset(filenames[1])
 
-        src_dataset = src_dataset.tokenize(WhiteSpaceTokenizer(),
+        src_dataset = src_dataset.tokenize(tokenizer,
                                            None, params.eos)
-        tgt_dataset = tgt_dataset.tokenize(WhiteSpaceTokenizer(),
+        tgt_dataset = tgt_dataset.tokenize(tokenizer,
                                            params.bos, None)
-        lab_dataset = lab_dataset.tokenize(WhiteSpaceTokenizer(),
+        lab_dataset = lab_dataset.tokenize(tokenizer,
                                            None, params.eos)
         src_dataset = Dataset.lookup(src_dataset, src_vocab,
                                      src_vocab[params.unk])
@@ -83,8 +86,8 @@ class MTPipeline(object):
             src_seq = torch.tensor(src_seq)
             tgt_seq = torch.tensor(tgt_seq)
             labels = torch.tensor(labels)
-            src_mask = src_seq != params.vocabulary["source"][params.pad]
-            tgt_mask = tgt_seq != params.vocabulary["target"][params.pad]
+            src_mask = src_seq != src_vocab[params.pad]
+            tgt_mask = tgt_seq != tgt_vocab[params.pad]
             src_mask = src_mask.float()
             tgt_mask = tgt_mask.float()
 
@@ -173,11 +176,12 @@ class MTPipeline(object):
 
     @staticmethod
     def get_infer_dataset(filename, params, cpu=False):
+        tokenizer = Tokenizer.from_file(params.tokenizer)
         sorted_keys, sorted_data = _sort_input_file(filename)
-        src_vocab = params.vocabulary["source"]
+        src_vocab = tokenizer.get_vocab()
 
         src_dataset = TextLineDataset(sorted_data)
-        src_dataset = src_dataset.tokenize(WhiteSpaceTokenizer(),
+        src_dataset = src_dataset.tokenize(tokenizer,
                                            None, params.eos)
         src_dataset = Dataset.lookup(src_dataset, src_vocab,
                                      src_vocab[params.unk])
@@ -189,7 +193,7 @@ class MTPipeline(object):
 
         def map_fn(inputs):
             src_seq = torch.tensor(inputs)
-            src_mask = src_seq != params.vocabulary["source"][params.pad]
+            src_mask = src_seq != src_vocab[params.pad]
             src_mask = src_mask.float()
 
             if not cpu:

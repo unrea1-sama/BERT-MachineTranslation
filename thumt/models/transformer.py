@@ -188,8 +188,8 @@ class Transformer(modules.Module):
         self.reset_parameters()
 
     def build_embedding(self, params):
-        svoc_size = len(params.vocabulary["source"])
-        tvoc_size = len(params.vocabulary["target"])
+        svoc_size = 30000
+        tvoc_size = 30000
 
         if params.shared_source_target_embedding and svoc_size != tvoc_size:
             raise ValueError("Cannot share source and target embedding.")
@@ -346,10 +346,10 @@ class Transformer(modules.Module):
     @staticmethod
     def base_params():
         params = utils.HParams(
-            pad="<pad>",
-            bos="<eos>",
-            eos="<eos>",
-            unk="<unk>",
+        pad="[PAD]",
+        bos="[BOS]",
+        eos="[EOS]",
+        unk="[UNK]",
             hidden_size=512,
             filter_size=2048,
             num_heads=8,

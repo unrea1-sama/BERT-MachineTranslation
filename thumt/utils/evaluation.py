@@ -12,6 +12,7 @@ import os
 import shutil
 import time
 import torch
+import re
 
 import torch.distributed as dist
 
@@ -21,6 +22,9 @@ from thumt.utils.bleu import bleu
 from thumt.utils.bpe import BPE
 from thumt.utils.misc import get_global_step
 from thumt.utils.summary import scalar
+
+
+from tokenizers import Tokenizer
 
 
 def _save_log(filename, result):
@@ -98,19 +102,20 @@ def _add_to_record(records, record, max_to_keep):
 
 def _convert_to_string(tensor, params, direction="target"):
     ids = tensor.tolist()
-
+    tokenizer = Tokenizer.from_file(params.tokenizer)
+    vocab = tokenizer.get_vocab()
     output = []
 
-    eos_id = params.vocabulary[direction][params.eos]
+    eos_id = vocab[params.eos]
 
     for wid in ids:
         if wid == eos_id:
             break
-        output.append(params.vocabulary[direction][wid])
+        output.append(tokenizer.id_to_token(wid))
 
-    output = b" ".join(output)
-
-    return output
+    output = "".join(output)
+    output = re.sub(r'</w>',' ',output)
+    return output.strip()
 
 
 def _evaluate_model(model, sorted_key, dataset, references, params):
@@ -172,7 +177,7 @@ def _evaluate_model(model, sorted_key, dataset, references, params):
                         continue
 
                     # Restore BPE segmentation
-                    seq = BPE.decode(seq)
+                    """seq = BPE.decode(seq)"""
 
                     results.append(seq.split())
 

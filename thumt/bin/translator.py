@@ -19,6 +19,9 @@ import thumt.data as data
 import torch.distributed as dist
 import thumt.models as models
 import thumt.utils as utils
+from tokenizers import Tokenizer
+
+from thumt.utils.evaluation import _convert_to_string as convert_to_string
 
 
 def parse_args():
@@ -34,9 +37,9 @@ def parse_args():
                         help="Path to output file.")
     parser.add_argument("--checkpoints", type=str, required=True, nargs="+",
                         help="Path to trained checkpoints.")
-    parser.add_argument("--vocabulary", type=str, nargs=2, required=True,
-                        help="Path to source and target vocabulary.")
-
+    #parser.add_argument("--vocabulary", type=str, nargs=2, required=True,
+    #                    help="Path to source and target vocabulary.")
+    parser.add_argument('--tokenizer',type=str)
     # model and configuration
     parser.add_argument("--models", type=str, required=True, nargs="+",
                         help="Name of the models.")
@@ -59,10 +62,10 @@ def default_params():
         output=None,
         vocabulary=None,
         # vocabulary specific
-        pad="<pad>",
-        bos="<bos>",
-        eos="<eos>",
-        unk="<unk>",
+        pad="[PAD]",
+        bos="[BOS]",
+        eos="[EOS]",
+        unk="[UNK]",
         device_list=[0],
         # decoding
         top_beams=1,
@@ -112,15 +115,15 @@ def import_params(model_dir, model_name, params):
 def override_params(params, args):
     params.parse(args.parameters.lower())
 
-    params.vocabulary = {
-        "source": data.Vocabulary(args.vocabulary[0]),
-        "target": data.Vocabulary(args.vocabulary[1])
-    }
+    #params.vocabulary = {
+    #    "source": data.Vocabulary(args.vocabulary[0]),
+    #    "target": data.Vocabulary(args.vocabulary[1])
+    #}
 
     return params
 
 
-def convert_to_string(tensor, params, direction="target"):
+"""def convert_to_string(tensor, params, direction="target"):
     ids = tensor.tolist()
 
     output = []
@@ -134,7 +137,7 @@ def convert_to_string(tensor, params, direction="target"):
 
     output = b" ".join(output)
 
-    return output
+    return output"""
 
 
 def infer_gpu_num(param_str):
@@ -162,7 +165,7 @@ def main(args):
         for i in range(len(model_cls_list))]
 
     params = params_list[0]
-
+    params.add_hparam('tokenizer',args.tokenizer)
     if args.cpu:
         dist.init_process_group("gloo",
                                 init_method=args.url,
@@ -305,15 +308,15 @@ def main(args):
             else:
                 restored_outputs = all_outputs
 
-            with open(args.output, "wb") as fd:
+            with open(args.output, "w") as fd:
                 if top_beams == 1:
                     for seqs in restored_outputs:
-                        fd.write(seqs[0] + b"\n")
+                        fd.write(seqs[0] + "\n")
                 else:
                     for idx, seqs in enumerate(restored_outputs):
                         for k, seq in enumerate(seqs):
-                            fd.write(b"%d\t%d\t" % (idx, k))
-                            fd.write(seq + b"\n")
+                            fd.write("%d\t%d\t" % (idx, k))
+                            fd.write(seq + "\n")
 
 
 # Wrap main function

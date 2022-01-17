@@ -252,16 +252,16 @@ class _LookupDSIter(IteratorBase):
 
     @_profile("_LookupDSIter", False)
     def __next__(self) -> List[int]:
-        outputs = []
+        """outputs = []
 
         for s in next(self._iterator):
             if s not in self._vocabulary:
                 outputs.append(self._unk_id)
             else:
                 outputs.append(self._vocabulary[s])
-
-        return outputs
-
+        
+        return outputs"""
+        return next(self._iterator)
 
 class _MapDSIter(IteratorBase):
 
@@ -368,26 +368,29 @@ class _TextLineDSIter(IteratorBase):
 
     def __init__(self, dataset: "TextLineDataset"):
         if isinstance(dataset.input_source, str):
-            self._file = open(dataset.input_source, "rb")
+            self._file = open(dataset.input_source, "r")
         else:
             self._file = _FileWrapper(dataset.input_source)
 
     @_profile("_TextLineDSIter", False)
-    def __next__(self) -> bytes:
+    def __next__(self):
         return next(self._file)
 
 
 class _TokenizedLineDSIter(IteratorBase):
 
     def __init__(self, dataset: "Dataset"):
-        self._bos = dataset.bos
-        self._eos = dataset.eos
         self._tokenizer = dataset.tokenizer
+        self._vocab = dataset.tokenizer.get_vocab()
+        self._bos = self._vocab[dataset.bos] if dataset.bos else None
+        self._eos = self._vocab[dataset.eos] if dataset.eos else None
         self._iterator = iter(dataset._dataset)
 
     @_profile("_TokenizedLineDSIter", False)
     def __next__(self) -> List[bytes]:
-        val = self._tokenizer.encode(next(self._iterator))
+        #x = next(self._iterator)
+        #print(x)
+        val = self._tokenizer.encode(next(self._iterator)).ids
 
         if self._bos:
             val.insert(0, self._bos)
