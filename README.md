@@ -1,5 +1,14 @@
 # THUMT: An Open Source Toolkit for Neural Machine Translation
 
+
+## 说明
+model_and_log文件夹放了之前训好的模型以及log，每个子文件夹内都有模型参数和超参数。
+eval.sh是推理的脚本
+hot_word.csv是翻译后的热词
+tokenizer.json是使用asr系统的token训好的tokenizer配置文件。这个tokenizer来自于huggingface，分词或者训练的速度都更快。一共有30000个词汇。
+tarin.sh.exmaple是示例训练脚本。里面的参数请参考thumt/bin/trainer.py
+
+
 ## Contents
 
 * [Introduction](#introduction)
@@ -91,3 +100,4 @@ If you have questions, suggestions and bug reports, please email [thumt17@gmail.
 * [L2Copy4APE](https://github.com/THUNLP-MT/L2Copy4APE) (Learning to Copy for Automatic Post-Editing)
 * [Document-Transformer](https://github.com/THUNLP-MT/Document-Transformer) (Improving the Transformer Translation Model with Document-Level Context)
 * [PR4NMT](https://github.com/THUNLP-MT/PR4NMT) (Prior Knowledge Integration for Neural Machine Translation using Posterior Regularization)
+

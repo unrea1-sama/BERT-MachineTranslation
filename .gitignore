@@ -4,5 +4,6 @@ __pycache__
 .*
 log*
 test*
-train*
+train_*
+train.sh
 corpus
